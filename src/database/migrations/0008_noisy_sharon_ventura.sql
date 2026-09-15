@@ -1,0 +1,1 @@
+ALTER TABLE "meetups" ADD COLUMN "location" text;

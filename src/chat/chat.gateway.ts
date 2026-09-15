@@ -1,0 +1,111 @@
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  MessageBody,
+  ConnectedSocket,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { z } from 'zod';
+import { getFirebaseAuth } from '../auth/firebase-admin';
+import { ChatService } from './chat.service';
+import { UsersService } from '../users/users.service';
+
+const joinConversationSchema = z.object({ conversationId: z.string().uuid() });
+const sendMessageSchema = z.object({
+  conversationId: z.string().uuid(),
+  content: z.string().min(1).max(5000).optional(),
+  mediaUrl: z.string().url().optional(),
+  mediaType: z.enum(['image', 'video', 'voice', 'document']).optional(),
+  audioDurationSec: z.number().optional(),
+  fileName: z.string().optional(),
+  fileSize: z.string().optional(),
+}).refine((d) => d.content || d.mediaUrl, {
+  message: 'Message must have content or media',
+});
+
+@WebSocketGateway({ cors: { origin: '*' } }) // lock origin down before prod
+export class ChatGateway implements OnGatewayConnection {
+  @WebSocketServer() server: Server;
+
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly usersService: UsersService,
+  ) {}
+
+  // Sockets don't go through Nest's HTTP guards, so we verify the
+  // Firebase token manually the moment a socket connects — same idea
+  // as FirebaseAuthGuard, just a different transport.
+  async handleConnection(client: Socket) {
+    try {
+      const token = client.handshake.auth?.token as string | undefined;
+      if (!token) throw new Error('no token');
+
+      const decoded = await getFirebaseAuth().verifyIdToken(token);
+      const dbUser = await this.usersService.findOrCreateByFirebaseUid({
+        uid: decoded.uid,
+        email: decoded.email,
+        name: decoded.name,
+        picture: decoded.picture,
+      });
+
+      client.data.userId = dbUser.id; // our Postgres user id, not the firebase uid
+    } catch {
+      client.disconnect();
+    }
+  }
+
+  @SubscribeMessage('join_conversation')
+  async handleJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() rawData: unknown,
+  ) {
+    const parsed = joinConversationSchema.safeParse(rawData);
+    if (!parsed.success) return;
+    const data = parsed.data;
+
+    const allowed = await this.chatService.isParticipant(
+      data.conversationId,
+      client.data.userId,
+    );
+    if (!allowed) return; // silently refuse — don't leak conversation existence
+
+    client.join(data.conversationId); // Socket.IO "room" = one conversation
+  }
+
+  @SubscribeMessage('send_message')
+  async handleMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() rawData: unknown,
+  ) {
+    const parsed = sendMessageSchema.safeParse(rawData);
+    if (!parsed.success) return;
+    const data = parsed.data;
+
+    const allowed = await this.chatService.isParticipant(
+      data.conversationId,
+      client.data.userId,
+    );
+    if (!allowed) return;
+
+    const message = await this.chatService.sendMessage(
+      data.conversationId,
+      client.data.userId,
+      {
+        content: data.content,
+        mediaUrl: data.mediaUrl,
+        mediaType: data.mediaType,
+        audioDurationSec: data.audioDurationSec,
+        fileName: data.fileName,
+        fileSize: data.fileSize,
+      },
+    );
+
+    // Broadcast to every socket in the room, including the sender —
+    // this is what fixes "one-sided delivery": both participants get
+    // the same event from the same source of truth, no per-client
+    // Firestore listener race.
+    this.server.to(data.conversationId).emit('new_message', message);
+  }
+}
