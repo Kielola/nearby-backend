@@ -11,8 +11,17 @@ import { z } from 'zod';
 import { getFirebaseAuth } from '../auth/firebase-admin';
 import { ChatService } from './chat.service';
 import { UsersService } from '../users/users.service';
+import { socketCorsOrigins } from '../common/socket-cors';
 
 const joinConversationSchema = z.object({ conversationId: z.string().uuid() });
+
+// Typing notifications are ephemeral (never persisted) and deliberately
+// tiny — a conversation id and nothing else. The server injects the
+// sender's identity, so a client can't claim to be someone else.
+const typingSchema = z.object({
+  conversationId: z.string().uuid(),
+  isTyping: z.boolean(),
+});
 const sendMessageSchema = z.object({
   conversationId: z.string().uuid(),
   content: z.string().min(1).max(5000).optional(),
@@ -25,10 +34,9 @@ const sendMessageSchema = z.object({
   message: 'Message must have content or media',
 });
 
-@WebSocketGateway({ cors: { origin: '*' } }) // lock origin down before prod
+@WebSocketGateway({ cors: { origin: socketCorsOrigins(), credentials: true } })
 export class ChatGateway implements OnGatewayConnection {
-  @WebSocketServer() server: Server;
-
+  @WebSocketServer() server!: Server;
   constructor(
     private readonly chatService: ChatService,
     private readonly usersService: UsersService,
@@ -72,6 +80,34 @@ export class ChatGateway implements OnGatewayConnection {
     if (!allowed) return; // silently refuse — don't leak conversation existence
 
     client.join(data.conversationId); // Socket.IO "room" = one conversation
+  }
+
+  /**
+   * Typing indicator. Replaces the old Firestore `presence` document
+   * write, which every client subscribed to. Only participants of the
+   * conversation receive the event, and the sender is taken from the
+   * authenticated socket rather than the payload.
+   */
+  @SubscribeMessage('typing')
+  async handleTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() rawData: unknown,
+  ) {
+    const parsed = typingSchema.safeParse(rawData);
+    if (!parsed.success) return;
+    const { conversationId, isTyping } = parsed.data;
+
+    const allowed = await this.chatService.isParticipant(
+      conversationId,
+      client.data.userId,
+    );
+    if (!allowed) return;
+
+    client.to(conversationId).emit('typing', {
+      conversationId,
+      userId: client.data.userId,
+      isTyping,
+    });
   }
 
   @SubscribeMessage('send_message')

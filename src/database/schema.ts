@@ -32,6 +32,16 @@ export const users = pgTable('users', {
   avatarUrl: text('avatar_url'),
   bio: text('bio'),
 
+  // Human-readable location label ("Herbert Macaulay Way, Yaba, Lagos").
+  // Resolved client-side from the GPS fix and synced here, so that OTHER
+  // users' radar results can show a real street instead of a hardcoded
+  // placeholder. Previously the frontend fabricated this everywhere with
+  // getStateStreets('Osun')[0] -> every neighbour read "Gbongan Rd".
+  streetName: text('street_name'),
+
+  // Free-text status ("Jollof hunting in Yaba").
+  customStatus: text('custom_status'),
+
   // Plain lat/lng columns. The PostGIS "location" geography column
   // (added via raw SQL) is generated FROM these automatically by
   // Postgres itself, so we never have to keep two values in sync by hand.
@@ -39,6 +49,11 @@ export const users = pgTable('users', {
   longitude: doublePrecision('longitude'),
 
   lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
+
+  // Horizontal accuracy of the GPS fix, in metres, as reported by the
+  // browser. Stored so we can refuse to trust (and never persist) a
+  // location label derived from a fix too imprecise to name a street.
+  locationAccuracy: doublePrecision('location_accuracy'),
 
   // Radar privacy controls, matching the old app's radar toggle + visibility
   // picker. "hidden"/"friends" still show you to people you already have a

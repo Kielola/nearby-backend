@@ -4,7 +4,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { RadarService } from './radar.service';
 import { UsersService } from '../users/users.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { updateLocationSchema, UpdateLocationDto } from './radar.dto';
+import { updateLocationSchema, UpdateLocationDto, nearbyQuerySchema, NearbyQueryDto } from './radar.dto';
 import { setVisibilitySchema, SetVisibilityDto } from './radar-visibility.dto';
 
 @UseGuards(FirebaseAuthGuard)
@@ -38,12 +38,20 @@ export class RadarController {
     );
   }
 
+  // radiusKm used to be read straight off the query string and multiplied
+  // by 1000 with no validation. That meant:
+  //   /radar/nearby?radiusKm=999999  -> every user in the database, in one
+  //                                    response (a free enumeration endpoint)
+  //   /radar/nearby?radiusKm=abc     -> NaN, which Postgres happily compares
+  //                                    as "distance <= NaN" == true
+  // The schema below rejects both before they reach the service. The
+  // service also clamps as a second line of defence.
   @Get('nearby')
   async getNearby(
     @CurrentUser() firebaseUser: { uid: string },
-    @Query('radiusKm') radiusKm = '5',
+    @Query(new ZodValidationPipe(nearbyQuerySchema)) query: NearbyQueryDto,
   ) {
     const me = await this.usersService.findOrCreateByFirebaseUid(firebaseUser);
-    return this.radarService.findNearby(me.id, Number(radiusKm) * 1000);
+    return this.radarService.findNearby(me.id, query.radiusKm * 1000);
   }
 }

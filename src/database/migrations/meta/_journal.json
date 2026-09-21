@@ -64,6 +64,13 @@
       "when": 1789378258440,
       "tag": "0008_noisy_sharon_ventura",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789651955777,
+      "tag": "0009_add_profile_fields",
+      "breakpoints": true
     }
   ]
 }

@@ -17,9 +17,20 @@ async function bootstrap() {
 
   // Locked down to real frontend origins from env instead of '*'.
   // FRONTEND_URL can be a comma-separated list for web + any preview URLs.
-  const allowedOrigins = process.env.FRONTEND_URL?.split(',').map((s) => s.trim()) ?? [];
+  const allowedOrigins = process.env.FRONTEND_URL?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
+
+  // `origin: true` reflects whatever Origin the caller sends, combined
+  // with credentials: true that means *any* website can call this API
+  // with a logged-in user's cookies/token. Tolerable locally, not in
+  // production — so refuse to start rather than silently ship it.
+  if (allowedOrigins.length === 0 && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'FRONTEND_URL must be set in production (comma-separated list of allowed origins).',
+    );
+  }
+
   app.enableCors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true, // falls back to allow-all only if unset (dev convenience)
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true, // allow-all is dev-only
     credentials: true,
   });
 

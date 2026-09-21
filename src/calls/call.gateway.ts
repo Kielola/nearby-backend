@@ -10,6 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { getFirebaseAuth } from '../auth/firebase-admin';
 import { UsersService } from '../users/users.service';
+import { socketCorsOrigins } from '../common/socket-cors';
 
 // IMPORTANT: this gateway only relays the WebRTC "handshake" (SDP
 // offer/answer + ICE candidates). Actual audio/video bytes never touch
@@ -17,10 +18,9 @@ import { UsersService } from '../users/users.service';
 // handshake completes. For calls across strict NATs/mobile networks
 // you'll also need a TURN server (e.g. self-hosted coturn, or a
 // service like Twilio/Metered) — that's infra config, not code here.
-@WebSocketGateway({ namespace: 'calls', cors: { origin: '*' } })
+@WebSocketGateway({ namespace: 'calls', cors: { origin: socketCorsOrigins(), credentials: true } })
 export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer() server: Server;
-
+  @WebSocketServer() server!: Server;
   // In-memory map of userId -> socketId. Fine for a single server
   // instance. If you ever run multiple backend instances behind a load
   // balancer, this needs to move to Redis (the ioredis client we

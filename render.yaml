@@ -1,0 +1,46 @@
+# Render blueprint — commit this, then in Render choose
+# "New > Blueprint" and point it at this repo. It fills in the build/start
+# commands and health check automatically instead of you typing them.
+services:
+  - type: web
+    name: nearby-backend
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT itself; the app already reads process.env.PORT.
+      - key: DATABASE_URL
+        sync: false          # set in the dashboard (Neon connection string)
+      # OPTIONAL. Leave unset and the backend uses an in-memory presence
+      # store — fine for a single instance, and it removes a whole service
+      # (and signup) from your deployment. Set it to a rediss:// URL before
+      # you ever run more than one instance.
+      - key: REDIS_URL
+        sync: false
+      # REQUIRED in production — the server refuses to boot without it.
+      # Your hosted frontend URL, e.g. https://your-project.web.app
+      # (Firebase gives you that domain as soon as the project exists, so you
+      # can fill this in before the frontend is actually deployed.)
+      - key: FRONTEND_URL
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SENTRY_DSN
+        sync: false

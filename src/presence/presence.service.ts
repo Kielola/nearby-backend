@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import Redis from 'ioredis';
-import { REDIS } from '../redis/redis.module';
+import { REDIS, PresenceStore } from '../redis/redis.module';
 
 // A key existing (with a live TTL) means "online". No explicit "offline"
 // bookkeeping needed for the common case — a phone that closes the app,
@@ -13,7 +12,7 @@ const key = (userId: string) => `presence:${userId}`;
 
 @Injectable()
 export class PresenceService {
-  constructor(@Inject(REDIS) private readonly redis: Redis) {}
+  constructor(@Inject(REDIS) private readonly redis: PresenceStore) {}
 
   async heartbeat(userId: string) {
     await this.redis.set(key(userId), new Date().toISOString(), 'EX', HEARTBEAT_TTL_SECONDS);

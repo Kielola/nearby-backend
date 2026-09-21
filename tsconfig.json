@@ -8,8 +8,20 @@
     "allowSyntheticDefaultImports": true,
     "target": "ES2022",
     "sourceMap": true,
+
+    // rootDir pins the OUTPUT LAYOUT. Without it the compiler infers the
+    // common source directory (./src here) and, as of TypeScript 6, refuses
+    // to build at all:
+    //   error TS5011: The common source directory of 'tsconfig.json' is
+    //   './src'. The 'rootDir' setting must be explicitly set to this or
+    //   another path to adjust your output's file layout.
+    // An inferred layout is also a silent hazard: if it ever changed,
+    // main.ts would emit to dist/src/main.js and the deploy command
+    // `node dist/main.js` would fail on the server with no obvious cause.
+    // Setting it makes dist/main.js guaranteed rather than implied.
+    "rootDir": "./src",
     "outDir": "./dist",
-    "baseUrl": "./",
+
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
@@ -19,5 +31,6 @@
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true
   },
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "drizzle.config.ts", "test"]
 }

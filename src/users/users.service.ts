@@ -1,8 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/schema';
+import { UpdateMeDto } from './users.dto';
 
 interface VerifiedFirebaseUser {
   uid: string;
@@ -30,8 +31,18 @@ export class UsersService {
     if (existing) return existing;
 
     // First time we've ever seen this Firebase uid — provision a row.
-    // .returning() gets Postgres to hand back the inserted row in the
-    // same round trip, instead of a second SELECT after inserting.
+    //
+    // This MUST be a single atomic statement with ON CONFLICT, not a
+    // bare insert. On a brand-new account the client opens the chat
+    // socket AND the calls socket at the same time, and both
+    // gateways call this method on connect. Both requests SELECT,
+    // both miss, both INSERT, and the loser hits
+    // users_firebase_uid_unique and dies with an unhandled 500 /
+    // socket disconnect. That is a first-login-only failure, which is
+    // why it can pass every test and still hit real users.
+    //
+    // onConflictDoNothing makes the loser a no-op instead of an error,
+    // and the follow-up SELECT then returns the winner's row.
     const [created] = await this.db
       .insert(schema.users)
       .values({
@@ -40,9 +51,18 @@ export class UsersService {
         email: firebaseUser.email,
         avatarUrl: firebaseUser.picture,
       })
+      .onConflictDoNothing({ target: schema.users.firebaseUid })
       .returning();
 
-    return created;
+    if (created) return created;
+
+    // We lost the race — read back the row the other request created.
+    const [raced] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.firebaseUid, firebaseUser.uid));
+
+    return raced;
   }
 
   async updateAvatarUrl(userId: string, avatarUrl: string) {
@@ -52,5 +72,51 @@ export class UsersService {
       .where(eq(schema.users.id, userId))
       .returning();
     return updated;
+  }
+
+  /**
+   * PATCH /me — the single write path for profile fields that used to be
+   * written straight to the `users` Firestore document from the client.
+   * `undefined` fields are dropped so a partial update never blanks out
+   * a column the client didn't mention.
+   */
+  async updateMyProfile(userId: string, patch: UpdateMeDto) {
+    const values: Record<string, unknown> = { updatedAt: new Date() };
+
+    if (patch.displayName !== undefined) values.displayName = patch.displayName;
+    if (patch.bio !== undefined) values.bio = patch.bio;
+    if (patch.avatarUrl !== undefined) values.avatarUrl = patch.avatarUrl;
+    if (patch.streetName !== undefined) values.streetName = patch.streetName;
+    if (patch.customStatus !== undefined) values.customStatus = patch.customStatus;
+    if (patch.locationAccuracy !== undefined) values.locationAccuracy = patch.locationAccuracy;
+
+    const [updated] = await this.db
+      .update(schema.users)
+      .set(values)
+      .where(eq(schema.users.id, userId))
+      .returning();
+
+    return updated;
+  }
+
+  /**
+   * GET /users/:id — public profile for viewing a neighbour. Deliberately
+   * excludes latitude/longitude, email and moderation flags.
+   */
+  async getPublicProfile(userId: string) {
+    const [user] = await this.db
+      .select({
+        id: schema.users.id,
+        displayName: schema.users.displayName,
+        avatarUrl: schema.users.avatarUrl,
+        bio: schema.users.bio,
+        streetName: schema.users.streetName,
+        customStatus: schema.users.customStatus,
+      })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId));
+
+    if (!user) throw new NotFoundException('User not found');
+    return user;
   }
 }

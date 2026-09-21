@@ -19,6 +19,7 @@ import { PresenceModule } from './presence/presence.module';
 import { ReportsModule } from './reports/reports.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { MeetupsModule } from './meetups/meetups.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { MeetupsModule } from './meetups/meetups.module';
     ReportsModule,
     NotificationsModule,
     MeetupsModule,
+    AiModule,
   ],
   controllers: [AppController], // handles incoming HTTP routes
   providers: [
