@@ -51,8 +51,33 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       client.data.userId = dbUser.id;
       this.onlineUsers.set(dbUser.id, client.id);
-    } catch {
-      client.disconnect();
+      console.log(`[calls] ${dbUser.id} connected (socket ${client.id})`);
+    } catch (err: any) {
+      // This used to be a bare `catch { client.disconnect(); }`, which meant a
+      // rejected socket left NO trace anywhere. The symptom was indistinguishable
+      // from the other person simply not answering: the caller got
+      // 'call:unavailable', and nothing in the logs explained why the callee was
+      // missing from `onlineUsers`.
+      //
+      // The usual causes, in order of likelihood:
+      //   1. the ID token is from a different Firebase project than
+      //      FIREBASE_PROJECT_ID on this service — verifyIdToken rejects it
+      //   2. FIREBASE_PRIVATE_KEY is malformed (the \n escapes are the usual
+      //      culprit when pasted into a dashboard)
+      //   3. the token genuinely expired
+      const reason = err?.code || err?.errorInfo?.code || err?.message || 'unknown';
+      console.error(
+        `[calls] socket ${client.id} rejected: ${reason}` +
+          (reason === 'auth/argument-error' || /project/i.test(String(reason))
+            ? ' — check FIREBASE_PROJECT_ID and FIREBASE_PRIVATE_KEY on this service'
+            : ''),
+      );
+      // Tell the client before dropping it, so the app can say something true
+      // rather than silently losing the ability to receive calls. The delay
+      // gives the packet a chance to flush — disconnect() would otherwise cut
+      // the connection before it is written.
+      client.emit('auth:error', { reason: String(reason) });
+      setTimeout(() => client.disconnect(), 250);
     }
   }
 

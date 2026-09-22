@@ -8,12 +8,31 @@ if (process.env.SENTRY_DSN) {
 }
 
 import { NestFactory } from '@nestjs/core';
+import { json, urlencoded } from 'express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/global-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // bodyParser is disabled here so the limit can be set explicitly below.
+  // Nest's default is Express's default: 100 kb. Anything larger was rejected
+  // with a 413 `PayloadTooLargeError` that surfaced in the logs as nothing more
+  // than "request entity too large" — no route, no user, no hint of what sent
+  // it.
+  //
+  // The payload that hit it was ~195 kb: a profile photo. When a Cloudinary
+  // upload fails, `uploadToStorage` falls back to returning the image as a
+  // base64 data URL, and that string is then sent to `PATCH /users/me` as
+  // `avatarUrl`. At 100 kb that is a guaranteed 413, so the photo silently
+  // failed to save — the user saw it on their own screen (it was still in local
+  // state) and nowhere else.
+  //
+  // 12 mb comfortably covers a base64 JPEG after client-side compression, which
+  // is the largest thing this API is legitimately sent. File uploads proper go
+  // to Cloudinary from the browser, not through here.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use(json({ limit: '12mb' }));
+  app.use(urlencoded({ extended: true, limit: '12mb' }));
 
   // Locked down to real frontend origins from env instead of '*'.
   // FRONTEND_URL can be a comma-separated list for web + any preview URLs.
