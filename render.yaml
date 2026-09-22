@@ -7,15 +7,26 @@ services:
     runtime: node
     plan: free
     region: singapore
+    # No --include=dev and no NODE_ENV here on purpose.
+    #
+    # Render already sets NODE_ENV=production at RUNTIME for Node services, on
+    # its own. Setting it as an env var below ALSO applies it at BUILD time,
+    # and npm honours NODE_ENV=production by omitting devDependencies —
+    # including @nestjs/cli, which provides the `nest` command. The build then
+    # dies with: sh: 1: nest: not found
+    #
+    # Verified: with NODE_ENV=production the install is 410 packages and `nest`
+    # is absent; without it, 886 packages and the build succeeds.
     buildCommand: npm ci && npm run build
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
-      - key: NODE_ENV
-        value: production
-      # Render injects PORT itself; the app already reads process.env.PORT.
+      # Do NOT add NODE_ENV here — see the comment above. Render injects it at
+      # runtime, so the production FRONTEND_URL guard still applies.
+      #
+      # Render also injects PORT; the app already reads process.env.PORT.
       - key: DATABASE_URL
-        sync: false          # set in the dashboard (Neon connection string)
+        sync: false          # paste the Neon connection string, unquoted
       # OPTIONAL. Leave unset and the backend uses an in-memory presence
       # store — fine for a single instance, and it removes a whole service
       # (and signup) from your deployment. Set it to a rediss:// URL before
@@ -23,9 +34,8 @@ services:
       - key: REDIS_URL
         sync: false
       # REQUIRED in production — the server refuses to boot without it.
-      # Your hosted frontend URL, e.g. https://your-project.web.app
-      # (Firebase gives you that domain as soon as the project exists, so you
-      # can fill this in before the frontend is actually deployed.)
+      # Your Netlify site URL, e.g. https://your-site.netlify.app
+      # No trailing slash. A wrong value here fails CORS in the browser.
       - key: FRONTEND_URL
         sync: false
       - key: FIREBASE_PROJECT_ID

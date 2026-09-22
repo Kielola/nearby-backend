@@ -2,7 +2,7 @@
   "name": "nearby-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Nearby app backend — NestJS + Postgres + Drizzle",
+  "description": "Nearby app backend \u2014 NestJS + Postgres + Drizzle",
   "scripts": {
     "build": "nest build",
     "start": "node dist/main.js",
@@ -12,9 +12,9 @@
     "db:studio": "drizzle-kit studio",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand --forceExit --detectOpenHandles",
     "db:migrate:prod": "node dist/database/migrate.js",
+    "start:prod": "node dist/main.js",
     "db:check": "tsx src/database/check.ts",
-    "db:check:prod": "node dist/database/check.js",
-    "start:prod": "node dist/main.js"
+    "db:check:prod": "node dist/database/check.js"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",
@@ -52,5 +52,8 @@
     "ts-jest": "^29.2.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

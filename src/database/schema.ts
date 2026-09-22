@@ -64,6 +64,20 @@ export const users = pgTable('users', {
     .notNull()
     .default('everyone'),
 
+  // Terms of Service acceptance.
+  //
+  // Stored server-side because this is the record that has to hold up if the
+  // question is ever asked "did this user agree to the terms, and to which
+  // version?" A client-side flag cannot answer that: it is cleared by emptying
+  // browser storage and never survives a reinstall.
+  //
+  // The timestamp is set by the server at write time, never sent by the client
+  // — an acceptance record the client can backdate is worthless. `version`
+  // lets us re-prompt everyone when the document itself changes.
+  termsAcceptedVersion: text('terms_accepted_version'),
+  termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
+  termsAcceptedIpHash: text('terms_accepted_ip_hash'),
+
   // Moderation: banned users are excluded from radar unconditionally,
   // relationship or not.
   banned: boolean('banned').notNull().default(false),

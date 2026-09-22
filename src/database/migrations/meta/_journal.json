@@ -71,6 +71,20 @@
       "when": 1789651955777,
       "tag": "0009_add_profile_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790008441079,
+      "tag": "0010_long_tomorrow_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790008441080,
+      "tag": "0011_terms_acceptance",
+      "breakpoints": true
     }
   ]
 }

@@ -100,6 +100,37 @@ export class UsersService {
   }
 
   /**
+   * Record that this user accepted a specific version of the Terms of Service.
+   *
+   * Idempotent by design: accepting again — a re-prompt after the document
+   * changes, or a duplicate request after a flaky reconnect — simply overwrites
+   * with the newest version and a fresh server timestamp. The client fires this
+   * without blocking the sign-up flow, so retries are expected and harmless.
+   *
+   * `ipHash` is an optional SHA-256 of the request IP. It lets us show later
+   * that an acceptance came from a distinct origin without retaining the
+   * address itself. Null when no usable header was present.
+   */
+  async acceptTerms(userId: string, version: string, ipHash: string | null) {
+    const [updated] = await this.db
+      .update(schema.users)
+      .set({
+        termsAcceptedVersion: version,
+        termsAcceptedAt: new Date(),
+        termsAcceptedIpHash: ipHash,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.users.id, userId))
+      .returning({
+        id: schema.users.id,
+        termsAcceptedVersion: schema.users.termsAcceptedVersion,
+        termsAcceptedAt: schema.users.termsAcceptedAt,
+      });
+
+    return updated;
+  }
+
+  /**
    * GET /users/:id — public profile for viewing a neighbour. Deliberately
    * excludes latitude/longitude, email and moderation flags.
    */

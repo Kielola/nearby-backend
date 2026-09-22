@@ -48,6 +48,10 @@ export class ChatService {
       audioDurationSec?: number;
       fileName?: string;
       fileSize?: string;
+      // Client-generated idempotency key. Stored so every read path — the live
+      // broadcast and REST history — returns the same value, letting the
+      // sender match it against its optimistic bubble on either path.
+      clientId?: string;
     },
   ) {
     const [message] = await this.db

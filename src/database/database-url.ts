@@ -86,6 +86,113 @@ const RECOGNISED_SSL_VALUES = new Set([
   'verify-full',
 ]);
 
+// ───────────────────────────────────────────────────────────────────────────
+// PROBLEM 3 — "TypeError: Invalid URL" on boot
+// ───────────────────────────────────────────────────────────────────────────
+// A hosting dashboard is not an .env file. In a .env file you write
+//
+//   DATABASE_URL="postgresql://user:pw@host/db"
+//
+// and dotenv strips the quotes for you. Paste that same line — quotes and all
+// — into a dashboard's value field and the quotes become part of the value.
+// `new URL('"postgresql://..."')` throws, postgres.js reports a bare
+// "TypeError: Invalid URL" with no mention of which variable is at fault, and
+// the service crash-loops.
+//
+// Verified: quotes, a leading "DATABASE_URL=", a missing scheme, and leftover
+// placeholder text all produce exactly that error.
+//
+// So we normalise the value first: trim it, and unwrap matching quotes — but
+// only when the unwrapped string actually parses, so a legitimate value is
+// never damaged. If it still will not parse, we throw an error that names the
+// problem instead of letting the driver fail cryptically.
+// ───────────────────────────────────────────────────────────────────────────
+
+function canParse(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Trim, and unwrap a pair of surrounding quotes when doing so yields a URL. */
+export function normaliseDatabaseUrl(raw: string): { value: string; quoteStripped: boolean } {
+  const trimmed = raw.trim();
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    const paired = (first === '"' && last === '"') || (first === "'" && last === "'");
+    if (paired) {
+      const inner = trimmed.slice(1, -1).trim();
+      if (canParse(inner)) {
+        return { value: inner, quoteStripped: true };
+      }
+    }
+  }
+  return { value: trimmed, quoteStripped: false };
+}
+
+/**
+ * Explain what is wrong with a connection string without ever printing the
+ * password. Only the scheme and structural facts are reported.
+ */
+export function diagnoseDatabaseUrl(raw: string | undefined): string | null {
+  if (raw === undefined || raw === null) {
+    return 'DATABASE_URL is not set at all.';
+  }
+
+  if (raw.trim() === '') {
+    return (
+      'DATABASE_URL is set but EMPTY.\n\n' +
+      '  Paste your full connection string as the value, or delete the\n' +
+      '  variable. An empty value crashes the service on boot.'
+    );
+  }
+
+  const { value } = normaliseDatabaseUrl(raw);
+  if (canParse(value)) return null; // nothing wrong
+
+  const trimmed = raw.trim();
+  const startsQuote = /^["']/.test(trimmed);
+  const endsQuote = /["']$/.test(trimmed);
+  const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//.exec(trimmed);
+  const scheme = schemeMatch ? schemeMatch[1] : null;
+  const hasKeyPrefix = /^[A-Z_]+=/.test(trimmed);
+
+  const observations: string[] = [];
+  if (startsQuote && endsQuote) {
+    observations.push('it is wrapped in quote characters');
+  }
+  if (hasKeyPrefix) {
+    observations.push('it includes a leading "NAME=" prefix');
+  }
+  if (!scheme) {
+    observations.push('it does not start with a URL scheme (postgresql:// or postgres://)');
+  } else if (!/^(postgres|postgresql)$/i.test(scheme)) {
+    observations.push(`its scheme is "${scheme}:", not postgres:// or postgresql://`);
+  }
+  if (observations.length === 0) {
+    observations.push('it is not a complete connection URL');
+  }
+
+  return [
+    'DATABASE_URL is not a valid PostgreSQL connection URL.',
+    '',
+    `  ${observations.join(';\n  ')}.`,
+    `  ${trimmed.length} characters long.`,
+    '',
+    'Expected shape:',
+    '  postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require',
+    '',
+    'Most common cause: the value was pasted WITH surrounding quotes. In a',
+    '.env file quotes are stripped for you; in a hosting dashboard they are',
+    'part of the value. Re-paste it without the quotes.',
+  ].join('\n');
+}
+
+
 /**
  * Is this host reachable only from this machine / this private network?
  * Everything else is treated as "on the internet" and must use TLS.
@@ -125,7 +232,7 @@ export function readDeclaredSslMode(raw: string | undefined) {
   if (!raw) return { key: null as string | null, value: null as string | null };
   let url: URL;
   try {
-    url = new URL(raw);
+    url = new URL(normaliseDatabaseUrl(raw).value);
   } catch {
     return { key: null, value: null };
   }
@@ -142,13 +249,26 @@ export function sanitizeDatabaseUrl(raw: string | undefined): string {
     throw new Error('DATABASE_URL is not set');
   }
 
+  const { value: normalised, quoteStripped } = normaliseDatabaseUrl(raw);
+
   let url: URL;
   try {
-    url = new URL(raw);
+    url = new URL(normalised);
   } catch {
-    // Not a URL we can parse. Hand it back untouched and let postgres.js
-    // produce the error message — it will be more specific than ours.
-    return raw;
+    // Throw a diagnosis that names the problem. Returning the raw value here
+    // would let postgres.js produce a bare "TypeError: Invalid URL" that never
+    // mentions DATABASE_URL — the hardest possible failure to debug from a
+    // hosting dashboard.
+    throw new Error(diagnoseDatabaseUrl(raw) ?? 'DATABASE_URL is not a valid URL');
+  }
+
+  if (quoteStripped) {
+    console.warn(
+      '[database] DATABASE_URL was wrapped in quote characters — removing them. ' +
+        'In a .env file your tooling strips quotes for you; in a hosting ' +
+        'dashboard they become part of the value. The connection string still ' +
+        'works — this is safe.',
+    );
   }
 
   // ── 1. Drop client-only parameters ────────────────────────────────────
@@ -191,7 +311,7 @@ export function sanitizeDatabaseUrl(raw: string | undefined): string {
     }
   }
 
-  const changed = stripped.length > 0 || enforcedReason !== null;
+  const changed = stripped.length > 0 || enforcedReason !== null || quoteStripped;
 
   // ── 3. Report ─────────────────────────────────────────────────────────
   if (stripped.length > 0) {

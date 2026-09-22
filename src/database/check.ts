@@ -20,6 +20,8 @@ import {
   readDeclaredSslMode,
   describeSslDecision,
   isRemoteHost,
+  diagnoseDatabaseUrl,
+  normaliseDatabaseUrl,
 } from './database-url';
 
 type Check = { ok: boolean; label: string; detail?: string };
@@ -187,7 +189,21 @@ async function main() {
   }
 
   console.log('\nDatabase check');
-  console.log('  target :', describe(raw));
+  // Show the NORMALISED value: a dashboard-pasted string may carry surrounding
+  // quotes, and printing "(unparseable URL)" for a value we can in fact use
+  // would be misleading.
+  console.log('  target :', describe(normaliseDatabaseUrl(raw).value));
+
+  // ── 0. Is the value even a URL? ────────────────────────────────────────
+  // Checked first so a malformed value is reported clearly instead of
+  // surfacing as a generic connection failure.
+  const urlProblem = diagnoseDatabaseUrl(raw);
+  if (urlProblem) {
+    console.error('\nDatabase check\n  target : (could not parse)\n');
+    console.error('  ✗ ' + urlProblem.replace(/\n/g, '\n    '));
+    console.error();
+    process.exit(1);
+  }
 
   // ── 1. Parse and clean the URL ─────────────────────────────────────────
   let url: string;

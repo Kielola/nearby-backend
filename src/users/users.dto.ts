@@ -33,3 +33,22 @@ export const publicProfileSelect = {
   customStatus: true,
   createdAt: true,
 } as const;
+
+// POST /me/terms-acceptance
+//
+// The client sends ONLY the version string it displayed. The server stamps the
+// time itself. Accepting a client-supplied timestamp would let anyone claim
+// they agreed at some earlier, more convenient moment — which is precisely the
+// question this record exists to answer.
+export const acceptTermsSchema = z.object({
+  version: z
+    .string()
+    .min(1)
+    .max(40)
+    // Matches the version identifiers used by the frontend's terms document
+    // (e.g. "2026-08-30"). Constrained so a client cannot stuff arbitrary text
+    // into the column.
+    .regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, 'version must look like YYYY-MM-DD'),
+});
+
+export type AcceptTermsDto = z.infer<typeof acceptTermsSchema>;

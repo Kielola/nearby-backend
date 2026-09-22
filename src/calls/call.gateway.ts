@@ -20,7 +20,13 @@ import { socketCorsOrigins } from '../common/socket-cors';
 // service like Twilio/Metered) — that's infra config, not code here.
 @WebSocketGateway({ namespace: 'calls', cors: { origin: socketCorsOrigins(), credentials: true } })
 export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  // The `!` is required: Nest injects this after construction, so it is
+  // genuinely unassigned in the constructor. Without it, TypeScript 6+ rejects
+  // the file with TS2564 ("has no initializer and is not definitely assigned")
+  // even though TypeScript 5.x accepted it — which means an editor running a
+  // newer TypeScript than the build shows an error the build does not.
   @WebSocketServer() server!: Server;
+
   // In-memory map of userId -> socketId. Fine for a single server
   // instance. If you ever run multiple backend instances behind a load
   // balancer, this needs to move to Redis (the ioredis client we

@@ -49,6 +49,17 @@ export const messages = pgTable('messages', {
   audioDurationSec: doublePrecision('audio_duration_sec'),
   fileName: text('file_name'),
   fileSize: text('file_size'),
+  // Idempotency key minted by the sending client, stored so the SAME key comes
+  // back on every read path — the live socket broadcast AND REST history.
+  //
+  // Without persistence the socket echo carried it but history did not, so a
+  // re-fetch racing the echo could not match the sender's optimistic bubble
+  // and rendered the message twice. The sender owns this value; it is not a
+  // server identifier and nothing else keys off it.
+  //
+  // Nullable: rows written before this column existed, and clients that don't
+  // send a key, simply have NULL.
+  clientId: text('client_id'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

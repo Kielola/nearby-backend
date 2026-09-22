@@ -6,3 +6,9 @@ dist/
 coverage/
 *.log
 serviceAccountKey.json
+# TypeScript incremental build cache. tsconfig.json sets "incremental":
+# true, so every build writes tsconfig.tsbuildinfo. It is a 300KB+
+# binary that changes on every compile — committing it adds noise to
+# every diff and can produce spurious merge conflicts.
+*.tsbuildinfo
+
