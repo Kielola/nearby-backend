@@ -7,10 +7,12 @@ import {
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
+import { UseFilters } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { getFirebaseAuth } from '../auth/firebase-admin';
 import { UsersService } from '../users/users.service';
 import { socketCorsOrigins } from '../common/socket-cors';
+import { GatewayExceptionFilter } from '../common/gateway-exception.filter';
 
 // IMPORTANT: this gateway only relays the WebRTC "handshake" (SDP
 // offer/answer + ICE candidates). Actual audio/video bytes never touch
@@ -19,6 +21,7 @@ import { socketCorsOrigins } from '../common/socket-cors';
 // you'll also need a TURN server (e.g. self-hosted coturn, or a
 // service like Twilio/Metered) — that's infra config, not code here.
 @WebSocketGateway({ namespace: 'calls', cors: { origin: socketCorsOrigins(), credentials: true } })
+@UseFilters(GatewayExceptionFilter)
 export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // The `!` is required: Nest injects this after construction, so it is
   // genuinely unassigned in the constructor. Without it, TypeScript 6+ rejects

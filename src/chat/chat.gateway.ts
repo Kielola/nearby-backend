@@ -6,12 +6,14 @@ import {
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
+import { UseFilters } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 import { getFirebaseAuth } from '../auth/firebase-admin';
 import { ChatService } from './chat.service';
 import { UsersService } from '../users/users.service';
 import { socketCorsOrigins } from '../common/socket-cors';
+import { GatewayExceptionFilter } from '../common/gateway-exception.filter';
 
 const joinConversationSchema = z.object({ conversationId: z.string().uuid() });
 
@@ -43,6 +45,7 @@ const sendMessageSchema = z.object({
 });
 
 @WebSocketGateway({ cors: { origin: socketCorsOrigins(), credentials: true } })
+@UseFilters(GatewayExceptionFilter)
 export class ChatGateway implements OnGatewayConnection {
   // The `!` is required: Nest injects this after construction, so it is
   // genuinely unassigned in the constructor. Without it, TypeScript 6+ rejects
@@ -73,8 +76,17 @@ export class ChatGateway implements OnGatewayConnection {
       });
 
       client.data.userId = dbUser.id; // our Postgres user id, not the firebase uid
-    } catch {
-      client.disconnect();
+    } catch (err: any) {
+      // This used to be a bare `catch { client.disconnect(); }` — the same silent
+      // failure that was fixed in call.gateway.ts, and it had a second
+      // consequence: `client.data.userId` stayed undefined, so any
+      // `join_conversation` / `typing` / `send_message` already in flight ran with
+      // an undefined id and threw a second, even less readable error out of the
+      // handler. Nothing in the logs connected the two.
+      const reason = err?.code || err?.errorInfo?.code || err?.message || 'unknown';
+      console.error(`[chat] socket ${client.id} rejected: ${reason}`);
+      client.emit('auth:error', { reason: String(reason) });
+      setTimeout(() => client.disconnect(), 250);
     }
   }
 

@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/all-schema';
+import { withoutUndefined } from '../common/without-undefined';
 
 @Injectable()
 export class ChatService {
@@ -54,9 +55,25 @@ export class ChatService {
       clientId?: string;
     },
   ) {
+    // Undefined keys are stripped before the insert, and this is load-bearing.
+    //
+    // postgres.js refuses `undefined` as a parameter — "UNDEFINED_VALUE:
+    // Undefined values are not allowed" — and throws before the statement
+    // reaches Postgres. The gateway builds its payload as an object literal
+    // listing every optional field, so a plain text message arrives here as
+    // `{ content: 'hi', mediaUrl: undefined, mediaType: undefined, ... }`.
+    // Spreading that into `.values()` made every text message fail, surfacing
+    // in the server log only as a bare UNDEFINED_VALUE from the WebSocket
+    // exception handler, with no indication of which field or which user.
+    //
+    // Every optional column on `messages` is nullable, so omitting the key is
+    // not merely safe — it is what lets Postgres apply NULL, which is the
+    // correct value for "the client did not send this".
+    const present = withoutUndefined({ conversationId, senderId, ...data });
+
     const [message] = await this.db
       .insert(schema.messages)
-      .values({ conversationId, senderId, ...data })
+      .values(present)
       .returning();
     return message;
   }
@@ -73,6 +90,13 @@ export class ChatService {
   // participant before letting them join a conversation's "room" —
   // never trust a conversationId the client sends without checking.
   async isParticipant(conversationId: string, userId: string) {
+    // A socket whose connection was rejected has no `client.data.userId`, and
+    // socket.io still delivers messages already in flight. `eq(column,
+    // undefined)` is the same UNDEFINED_VALUE crash described above, so bail
+    // out before building the query — a caller without an identity is by
+    // definition not a participant.
+    if (!conversationId || !userId) return false;
+
     const [row] = await this.db
       .select()
       .from(schema.conversationParticipants)

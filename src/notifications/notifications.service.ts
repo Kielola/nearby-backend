@@ -3,6 +3,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/all-schema';
+import { withoutUndefined } from '../common/without-undefined';
 
 @Injectable()
 export class NotificationsService {
@@ -16,7 +17,9 @@ export class NotificationsService {
   ) {
     const [notification] = await this.db
       .insert(schema.notifications)
-      .values({ senderId, ...data })
+      // Any future optional field on this payload would otherwise crash the
+      // insert the same way it did for messages and posts.
+      .values(withoutUndefined({ senderId, ...data }))
       .returning();
     return notification;
   }

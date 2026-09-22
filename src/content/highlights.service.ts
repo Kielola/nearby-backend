@@ -3,6 +3,7 @@ import { asc, eq } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/all-schema';
+import { withoutUndefined } from '../common/without-undefined';
 
 @Injectable()
 export class HighlightsService {
@@ -13,7 +14,8 @@ export class HighlightsService {
   async create(userId: string, data: { mediaUrl: string; mediaType: string; caption?: string }) {
     const [highlight] = await this.db
       .insert(schema.highlights)
-      .values({ userId, ...data })
+      // `caption` is optional — same UNDEFINED_VALUE crash as messages and posts.
+      .values(withoutUndefined({ userId, ...data }))
       .returning();
     return highlight;
   }

@@ -3,6 +3,7 @@ import { desc, eq, inArray } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/all-schema';
+import { withoutUndefined } from '../common/without-undefined';
 
 @Injectable()
 export class PostsService {
@@ -13,7 +14,11 @@ export class PostsService {
   async create(authorId: string, data: { caption?: string; mediaUrl?: string; mediaType?: string }) {
     const [post] = await this.db
       .insert(schema.posts)
-      .values({ authorId, ...data })
+      // withoutUndefined is not optional here: `caption`, `mediaUrl` and
+      // `mediaType` are all optional, so a text-only post with no caption spread
+      // three present-but-undefined keys into this insert and crashed the
+      // request with UNDEFINED_VALUE.
+      .values(withoutUndefined({ authorId, ...data }))
       .returning();
     return post;
   }

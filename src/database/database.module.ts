@@ -32,6 +32,33 @@ export const DRIZZLE = Symbol('DRIZZLE_CONNECTION');
           // fresh TCP+TLS handshake after each quiet period (~200-500ms), not
           // per request. Local Postgres is unaffected (it reconnects instantly).
           idle_timeout: 20,
+
+          // Seatbelt for the entire `UNDEFINED_VALUE` class of failure.
+          //
+          // postgres.js refuses `undefined` as a parameter by default: it throws
+          // from inside the driver, before the statement reaches Postgres, which
+          // is why the error names no column, no query and no user. Setting
+          // `transform.undefined` to `null` makes it send NULL instead of
+          // throwing.
+          //
+          // That is the correct default for this app — every optional column in
+          // the schema is nullable, so NULL is exactly what "the client did not
+          // send this field" means. If a column is ever NOT NULL, Postgres now
+          // raises a proper not-null violation naming that column, which is a far
+          // more useful failure than a context-free driver throw.
+          //
+          // The honest trade-off: an `undefined` used in a WHERE clause now
+          // compiles to `col = NULL`, which matches no rows (SQL three-valued
+          // logic) instead of aborting the query. A lookup that would have thrown
+          // a 500 now returns "not found" instead. That is the better of the two
+          // failures for a user-facing app, and the explicit per-call-site fixes
+          // above mean the meaningful paths pass real values either way.
+          //
+          // The per-call-site fixes stay in place (they make the intent explicit
+          // at the place it matters). This makes the whole class of bug
+          // impossible rather than merely absent from the paths we happened to
+          // audit today.
+          transform: { undefined: null },
         });
         return drizzle(client, { schema });
       },

@@ -49,11 +49,15 @@ export class MeetupsService {
 
     const [meetup] = await this.db
       .insert(schema.meetups)
+      // Both of these are optional and both columns are nullable. `location` was
+      // passed straight through and `scheduledAt` was mapped to an explicit
+      // `undefined`, so scheduling a meetup with no location — or with no time —
+      // threw UNDEFINED_VALUE and the meetup was never created.
       .values({
         requesterId,
         otherUserId,
-        location,
-        scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
+        location: location ?? null,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
       })
       .returning();
     return meetup;
@@ -111,7 +115,9 @@ export class MeetupsService {
 
     const [created] = await this.db
       .insert(schema.meetupRatings)
-      .values({ meetupId, raterId, ratedUserId, rating, comment })
+      // `comment` is optional and the column is nullable — rating without
+      // leaving a comment used to throw instead of inserting a NULL.
+      .values({ meetupId, raterId, ratedUserId, rating, comment: comment ?? null })
       .returning();
     return created;
   }

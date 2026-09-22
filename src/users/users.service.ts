@@ -48,8 +48,24 @@ export class UsersService {
       .values({
         firebaseUid: firebaseUser.uid,
         displayName: firebaseUser.name ?? 'New User',
-        email: firebaseUser.email,
-        avatarUrl: firebaseUser.picture,
+        // `?? null`, not the raw value, and this is not defensive padding.
+        //
+        // postgres.js refuses `undefined` as a query parameter outright —
+        // "UNDEFINED_VALUE: Undefined values are not allowed" — and throws
+        // before the statement ever reaches Postgres. `email` and `picture` are
+        // absent from a Firebase ID token whenever that claim is not present:
+        // a phone-number sign-in has no email at all, and an account with no
+        // profile photo has no picture.
+        //
+        // displayName was already guarded here; these two were not, so for
+        // exactly those users the row was never created, the gateway rejected
+        // the socket, and the account became permanently unreachable for calls
+        // — the caller was told "they're not reachable right now" and nothing
+        // anywhere said why.
+        //
+        // Both columns are nullable in the schema, so null is the correct value.
+        email: firebaseUser.email ?? null,
+        avatarUrl: firebaseUser.picture ?? null,
       })
       .onConflictDoNothing({ target: schema.users.firebaseUid })
       .returning();
