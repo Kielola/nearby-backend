@@ -103,7 +103,23 @@ export class ChatGateway implements OnGatewayConnection {
       data.conversationId,
       client.data.userId,
     );
-    if (!allowed) return; // silently refuse — don't leak conversation existence
+    if (!allowed) {
+      // Return without joining (never leak whether the conversation exists), but
+      // LOG it. This used to be a bare `return`, which meant a user who could not
+      // join their own conversation's room produced no evidence anywhere — while
+      // the client's socket still looked perfectly connected and simply received
+      // nothing. That is the failure the live test surfaced as "one account can
+      // send and receive, the other cannot".
+      //
+      // `userId` undefined means this socket never authenticated (handleConnection
+      // failed) and every handler on it is a no-op.
+      console.warn(
+        `[chat] join refused: socket ${client.id} ` +
+          `userId=${client.data.userId ?? 'UNAUTHENTICATED'} ` +
+          `conversationId=${data.conversationId}`,
+      );
+      return;
+    }
 
     client.join(data.conversationId); // Socket.IO "room" = one conversation
   }
@@ -141,29 +157,72 @@ export class ChatGateway implements OnGatewayConnection {
     @ConnectedSocket() client: Socket,
     @MessageBody() rawData: unknown,
   ) {
+    // Best-effort identity for the failure report below. The client's idempotency
+    // key is what the sender's optimistic bubble is keyed on, so echoing it back
+    // is what lets the app show "Not sent" on the right message instead of
+    // leaving it looking delivered.
+    const raw = (rawData ?? {}) as { conversationId?: string; clientId?: string };
+
     const parsed = sendMessageSchema.safeParse(rawData);
-    if (!parsed.success) return;
+    if (!parsed.success) {
+      console.warn(`[chat] send rejected (invalid payload): socket ${client.id}`);
+      client.emit('message:error', {
+        conversationId: raw.conversationId,
+        clientId: raw.clientId,
+        reason: 'invalid-payload',
+      });
+      return;
+    }
     const data = parsed.data;
 
     const allowed = await this.chatService.isParticipant(
       data.conversationId,
       client.data.userId,
     );
-    if (!allowed) return;
-
-    const message = await this.chatService.sendMessage(
-      data.conversationId,
-      client.data.userId,
-      {
-        content: data.content,
-        mediaUrl: data.mediaUrl,
-        mediaType: data.mediaType,
-        audioDurationSec: data.audioDurationSec,
-        fileName: data.fileName,
-        fileSize: data.fileSize,
+    if (!allowed) {
+      console.warn(
+        `[chat] send refused (not a participant): socket ${client.id} ` +
+          `userId=${client.data.userId ?? 'UNAUTHENTICATED'} ` +
+          `conversationId=${data.conversationId}`,
+      );
+      client.emit('message:error', {
+        conversationId: data.conversationId,
         clientId: data.clientId,
-      },
-    );
+        reason: 'not-a-participant',
+      });
+      return;
+    }
+
+    let message;
+    try {
+      message = await this.chatService.sendMessage(
+        data.conversationId,
+        client.data.userId,
+        {
+          content: data.content,
+          mediaUrl: data.mediaUrl,
+          mediaType: data.mediaType,
+          audioDurationSec: data.audioDurationSec,
+          fileName: data.fileName,
+          fileSize: data.fileSize,
+          clientId: data.clientId,
+        },
+      );
+    } catch (err: any) {
+      // A storage failure must not look like a delivered message. The client
+      // sets its bubble to 'sent' the moment it emits, so without this the sender
+      // is told nothing and the message simply never arrives for anyone.
+      console.error(
+        `[chat] send failed for socket ${client.id} (conversation ${data.conversationId}):`,
+        err?.code ?? err?.message ?? err,
+      );
+      client.emit('message:error', {
+        conversationId: data.conversationId,
+        clientId: data.clientId,
+        reason: err?.code || err?.message || 'send-failed',
+      });
+      return;
+    }
 
     // Broadcast to every socket in the room, including the sender —
     // this is what fixes "one-sided delivery": both participants get
