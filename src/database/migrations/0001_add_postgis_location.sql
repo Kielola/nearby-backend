@@ -13,8 +13,8 @@ ALTER TABLE "users"
       THEN ST_SetSRID(ST_MakePoint("longitude", "latitude"), 4326)::geography
       ELSE NULL
     END
-  ) STORED;
+  ) STORED;--> statement-breakpoint
 
 -- A GIST index is what makes "find everyone within 2km" fast instead of
 -- a full table scan computing distance for every row.
-CREATE INDEX "users_location_gist_idx" ON "users" USING GIST ("location");
+CREATE INDEX IF NOT EXISTS "users_location_gist_idx" ON "users" USING GIST ("location");

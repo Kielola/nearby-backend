@@ -1,1 +1,1 @@
-ALTER TABLE "messages" ADD COLUMN "client_id" text;
+ALTER TABLE "messages" ADD COLUMN IF NOT EXISTS "client_id" text;

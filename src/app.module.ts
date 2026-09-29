@@ -19,6 +19,15 @@ import { PresenceModule } from './presence/presence.module';
 import { ReportsModule } from './reports/reports.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { MeetupsModule } from './meetups/meetups.module';
+import { ReferralsModule } from './referrals/referrals.module';
+import { LedgerModule } from './ledger/ledger.module';
+import { MilestonesModule } from './milestones/milestones.module';
+import { TeamsModule } from './teams/teams.module';
+import { TreasureModule } from './treasure/treasure.module';
+import { PayoutsModule } from './payouts/payouts.module';
+import { InfluencersModule } from './influencers/influencers.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { StatsModule } from './stats/stats.module';
 import { AiModule } from './ai/ai.module';
 
 @Module({
@@ -45,6 +54,17 @@ import { AiModule } from './ai/ai.module';
     ReportsModule,
     NotificationsModule,
     MeetupsModule,
+    // Referral programme — phased rebuild of the standalone referral app on the
+    // main backend, so it shares one identity and one notifications inbox.
+    LedgerModule,
+    ReferralsModule,
+    MilestonesModule,
+    TeamsModule,
+    TreasureModule,
+    PayoutsModule,
+    InfluencersModule,
+    LeaderboardModule,
+    StatsModule,
     AiModule,
   ],
   controllers: [AppController], // handles incoming HTTP routes

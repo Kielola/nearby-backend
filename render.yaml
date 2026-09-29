@@ -5,8 +5,24 @@ services:
   - type: web
     name: nearby-backend
     runtime: node
+    # NOTE: deliberately NO `rootDir`.
+    #
+    # This backend is its own repository (Kielola/nearby-backend) with
+    # package.json at the root. A Blueprint `rootDir: nearby-backend` would tell
+    # Render to look in a subfolder that does not exist and the build would fail
+    # immediately. Render's "Root Directory" setting is only for monorepos.
     plan: free
-    region: singapore
+    # Ohio, NOT singapore.
+    #
+    # Two round trips matter in this app and both are physical distance:
+    #   1. Every request does database work, and the Neon database lives in
+    #      us-east-2 (Ohio). Render's "ohio" region puts the backend in the same
+    #      datacentre as the database, so a query costs a fraction of a
+    #      millisecond instead of a ~200 ms Pacific hop.
+    #   2. Every realtime message crosses this link too.
+    #
+    # Singapore was a leftover default. There is no user population there.
+    region: ohio
     # No --include=dev and no NODE_ENV here on purpose.
     #
     # Render already sets NODE_ENV=production at RUNTIME for Node services, on
@@ -37,6 +53,18 @@ services:
       # Your Netlify site URL, e.g. https://your-site.netlify.app
       # No trailing slash. A wrong value here fails CORS in the browser.
       - key: FRONTEND_URL
+        sync: false
+      # The referral programme builds shareable invite links from this origin,
+      # and only this origin. It is what makes /?ref=CODE point at the right
+      # place. Comma-separate if you serve the app from more than one host.
+      - key: REFERRAL_APP_ORIGIN
+        value: https://nearby.fashfos.com
+      # Comma-separated Firebase UIDs allowed to review payouts, approve
+      # influencers and mark referrals fraudulent. EMPTY MEANS NOBODY IS AN
+      # ADMIN — the guard fails closed on purpose, so an unset variable can
+      # never turn into an open admin API. Set it before you need the review
+      # screens.
+      - key: ADMIN_FIREBASE_UIDS
         sync: false
       - key: FIREBASE_PROJECT_ID
         sync: false

@@ -4,3 +4,4 @@ export * from './social-schema';
 export * from './reports-schema';
 export * from './notifications-schema';
 export * from './meetups-schema';
+export * from './referral-schema';
