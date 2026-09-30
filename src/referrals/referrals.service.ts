@@ -75,7 +75,7 @@ export class ReferralsService {
 
   async referralLink(userId: string): Promise<string> {
     const code = await this.ensureCode(userId);
-    return `${APP_ORIGIN}/?ref=${code}`;
+    return `${APP_ORIGIN}/join/${code}`;
   }
 
   /** Resolve a code to the user who owns it. Checks personal codes first, then
@@ -383,7 +383,7 @@ export class ReferralsService {
       avatar: user?.avatarUrl ?? '',
       bio: user?.bio ?? '',
       referralCode: code,
-      referralLink: `${APP_ORIGIN}/?ref=${code}`,
+      referralLink: `${APP_ORIGIN}/join/${code}`,
       verifiedInvites: verified,
       pendingInvites: Number(counts?.pending ?? 0),
       fraudulentInvites: Number(counts?.fraudulent ?? 0),

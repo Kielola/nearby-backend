@@ -105,6 +105,8 @@ export class UsersService {
     if (patch.streetName !== undefined) values.streetName = patch.streetName;
     if (patch.customStatus !== undefined) values.customStatus = patch.customStatus;
     if (patch.locationAccuracy !== undefined) values.locationAccuracy = patch.locationAccuracy;
+    if (patch.age !== undefined) values.age = patch.age;
+    if (patch.interests !== undefined) values.interests = patch.interests;
 
     const [updated] = await this.db
       .update(schema.users)
@@ -159,6 +161,8 @@ export class UsersService {
         bio: schema.users.bio,
         streetName: schema.users.streetName,
         customStatus: schema.users.customStatus,
+        age: schema.users.age,
+        interests: schema.users.interests,
       })
       .from(schema.users)
       .where(eq(schema.users.id, userId));

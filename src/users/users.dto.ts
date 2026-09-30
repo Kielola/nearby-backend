@@ -9,6 +9,13 @@ export const updateMeSchema = z
     avatarUrl: z.string().url().max(1000).optional(),
     streetName: z.string().max(160).optional(),
     customStatus: z.string().max(120).optional(),
+    // Collected at registration. Bounded rather than free-form: an age of 0 or
+    // 999 is not a real answer, and storing one would corrupt any age-based
+    // matching later. 13 is the floor because the app is not for children.
+    age: z.number().int().min(13).max(120).nullable().optional(),
+    // Capped so a client cannot send an unbounded array. Each tag is bounded
+    // and trimmed so "  Football  " and "football" are matchable later.
+    interests: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
     // Sent alongside streetName so the server can store how precise the
     // underlying fix was. Lets us tell "real street" apart from
     // "coarse label we shouldn't show to strangers".
@@ -32,6 +39,11 @@ export const publicProfileSelect = {
   streetName: true,
   customStatus: true,
   createdAt: true,
+  // Safe to show to other users: an age and a list of interests are things the
+  // user chose to put on their profile. Location precision is deliberately NOT
+  // here — see the note above.
+  age: true,
+  interests: true,
 } as const;
 
 // POST /me/terms-acceptance

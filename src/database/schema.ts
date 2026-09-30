@@ -3,6 +3,7 @@ import {
   uuid,
   text,
   doublePrecision,
+  integer,
   timestamp,
   boolean,
   pgEnum,
@@ -31,6 +32,17 @@ export const users = pgTable('users', {
   email: text('email'),
   avatarUrl: text('avatar_url'),
   bio: text('bio'),
+
+  // Collected at registration rather than deferred to a settings screen the
+  // user may never open. Nullable because accounts created before this existed
+  // have no value, and because a user who declines to give an age must still
+  // be able to register — the app asks, it does not demand.
+  age: integer('age'),
+
+  // Free-form interest tags chosen at sign-up ("football", "jollof").
+  // Stored as a text array so they can be matched against other users'
+  // interests without parsing a string on every read.
+  interests: text('interests').array(),
 
   // Human-readable location label ("Herbert Macaulay Way, Yaba, Lagos").
   // Resolved client-side from the GPS fix and synced here, so that OTHER
