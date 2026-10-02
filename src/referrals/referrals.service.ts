@@ -349,6 +349,9 @@ export class ReferralsService {
         avatarUrl: schema.users.avatarUrl,
         bio: schema.users.bio,
         customStatus: schema.users.customStatus,
+        // Needed for the Area vs Area challenge panel, which has to tell the user
+        // which area their referrals are being counted towards.
+        streetName: schema.users.streetName,
       })
       .from(schema.users)
       .where(eq(schema.users.id, userId));
@@ -382,6 +385,10 @@ export class ReferralsService {
       name: user?.displayName ?? 'Nearby Member',
       avatar: user?.avatarUrl ?? '',
       bio: user?.bio ?? '',
+      // The area this user is competing for in the monthly Area vs Area challenge.
+      // Without it the challenge screen cannot tell someone which area their
+      // referrals are being counted towards, which is the first thing they need.
+      areaName: user?.streetName ?? null,
       referralCode: code,
       referralLink: `${APP_ORIGIN}/join/${code}`,
       verifiedInvites: verified,

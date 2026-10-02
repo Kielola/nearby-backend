@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, notInArray, sql } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/all-schema';
@@ -27,74 +27,70 @@ import { formatNaira } from '../common/money';
  * already auto-claimed is refused as "already claimed", so it pays once and the
  * behaviour is unchanged.
  */
-export const MILESTONE_TIERS = [
-  {
-    key: 'invites_5',
-    invitesRequired: 5,
-    rewardTitle: '1-Month Premium subscription',
-    rewardDescription:
-      'Enjoy 1 month of Nearby Premium features (unlimited radar filter, priority badges) after your first 3 free trial months.',
-    rewardType: 'subscription' as const,
-    valueKobo: 0,
-    badgeName: null as string | null,
-    limitTotal: null as number | null,
-    autoClaim: false,
-    sortOrder: 1,
-  },
-  {
-    key: 'invites_20',
-    invitesRequired: 20,
-    rewardTitle: '₦2,000 cash reward',
-    rewardDescription:
-      '₦2,000 credited directly to your balance for inviting 20 verified friends.',
-    rewardType: 'cash' as const,
-    valueKobo: 200_000, // ₦2,000 in kobo
-    badgeName: null,
-    limitTotal: null,
-    autoClaim: true,
-    sortOrder: 2,
-  },
-  {
-    key: 'invites_30',
-    invitesRequired: 30,
-    rewardTitle: 'Exclusive "Community Builder" badge',
-    rewardDescription:
-      'Ultra-rare badge strictly limited to early community builders. Displays proudly on your Nearby profile.',
-    rewardType: 'badge' as const,
-    valueKobo: 0,
-    badgeName: 'Community Builder',
-    limitTotal: 1000,
-    autoClaim: false,
-    sortOrder: 3,
-  },
-  {
-    key: 'invites_50',
-    invitesRequired: 50,
-    rewardTitle: 'Nearby T-Shirt & ₦5,000 cash',
-    rewardDescription:
-      'Receive a branded Nearby official T-Shirt + ₦5,000 cash bonus.',
-    rewardType: 'swag' as const,
-    valueKobo: 500_000, // ₦5,000 in kobo
-    badgeName: null,
-    limitTotal: 100,
-    autoClaim: true,
-    sortOrder: 4,
-  },
-  {
-    key: 'invites_100',
-    invitesRequired: 100,
-    rewardTitle: 'Nearby Ambassador status',
-    rewardDescription:
-      'Become an official Nearby Ambassador — executive status, direct line to leadership, monthly stipends and exclusive invitations.',
-    rewardType: 'ambassador' as const,
-    valueKobo: 0,
-    badgeName: 'Ambassador VIP',
-    limitTotal: null,
-    autoClaim: false,
-    sortOrder: 5,
-  },
-];
+/**
+ * How the reward actually works.
+ *
+ *     ₦2,000 for every completed block of 10 verified referrals.
+ *
+ * Cumulative and repeating, not a one-off:
+ *
+ *     10 referrals -> ₦2,000
+ *     20 referrals -> ₦4,000      (2 blocks)
+ *     30 referrals -> ₦6,000      (3 blocks)
+ *     50 referrals -> ₦10,000     (5 blocks)
+ *
+ * That last line is the number the Area vs Area challenge is built on: the
+ * monthly challenge requires at least 50 verified referrals, which under this
+ * table is also exactly ₦10,000 earned from the referral rate alone.
+ *
+ * ## What this replaced, and why it mattered
+ *
+ * The previous table paid ₦2,000 at 20 invites and ₦5,000 at 50, with nothing at
+ * 10 and nothing repeating. It had been carried over from an earlier version of
+ * the app and did not match the reward the business actually advertises.
+ *
+ * The mismatch was not cosmetic. A user reaching 10 verified referrals — which
+ * the app told them was worth ₦2,000 — would see a balance of ₦0 and no tier
+ * crossed. The app would have been advertising a reward the database did not pay,
+ * which is the kind of thing that turns into a public accusation rather than a bug
+ * report.
+ *
+ * ## Why the tiers are generated rather than written out
+ *
+ * Because the rule IS "every 10". Ten hand-written entries invite a typo into one
+ * of them, and a typo here is a wrong payment. The loop cannot drift out of step
+ * with the description above because there is only one place the number lives.
+ */
+const REWARD_PER_BLOCK_KOBO = 200_000; // ₦2,000
+const REFERRALS_PER_BLOCK = 10;
+const MAX_TIER_INVITES = 100;
 
+export const MILESTONE_TIERS = Array.from(
+  { length: MAX_TIER_INVITES / REFERRALS_PER_BLOCK },
+  (_, index) => {
+    const invitesRequired = (index + 1) * REFERRALS_PER_BLOCK;
+    const valueKobo = REWARD_PER_BLOCK_KOBO;
+
+    return {
+      key: `invites_${invitesRequired}`,
+      invitesRequired,
+      rewardTitle: `₦${(valueKobo / 100).toLocaleString('en-NG')} cash reward`,
+      rewardDescription:
+        `₦${(valueKobo / 100).toLocaleString('en-NG')} credited to your balance for every 10 ` +
+        `verified referrals — that is ${invitesRequired / REFERRALS_PER_BLOCK} block` +
+        `${invitesRequired / REFERRALS_PER_BLOCK === 1 ? '' : 's'} completed, not the total.`,
+      rewardType: 'cash' as const,
+      valueKobo,
+      badgeName: null as string | null,
+      limitTotal: null as number | null,
+      // Paid the moment the threshold is crossed. With a repeating reward there is
+      // nothing for the user to decide, and waiting for a tap would leave money
+      // sitting unclaimed that they have already earned.
+      autoClaim: true,
+      sortOrder: invitesRequired,
+    };
+  },
+);
 @Injectable()
 export class MilestonesService implements OnModuleInit {
   private readonly logger = new Logger('milestones');
@@ -106,38 +102,82 @@ export class MilestonesService implements OnModuleInit {
   ) {}
 
   /**
-   * Seed on boot, without letting a failure kill the process. If migrations
-   * have not been run against this database yet, the app should still serve
-   * everything else and log loudly — not enter a crash loop.
+   * Sync the reward table on boot, without letting a failure kill the process. If
+   * migrations have not been run against this database yet, the app should still
+   * serve everything else and log loudly — not enter a crash loop.
    */
   async onModuleInit() {
     try {
-      await this.seedIfEmpty();
+      await this.syncTiers();
     } catch (error) {
       this.logger.warn(
-        `[milestones] seeding skipped — ${error instanceof Error ? error.message : String(error)}`,
+        `[milestones] reward sync skipped — ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
 
   /**
-   * Insert the tier rows if the table is empty.
+   * Bring the `milestones` table in line with `MILESTONE_TIERS`.
    *
-   * Seeding from code on startup rather than from the browser on mount, which is
-   * what the original did — `seedMilestonesIfEmpty` ran in the client, so any
-   * visitor could trigger a write and the seeded values were whatever build they
-   * happened to be running.
+   * ## This used to be `seedIfEmpty`, and that was a silent failure waiting to
+   * ## happen
+   *
+   * The old version inserted the tiers only when the table had zero rows. That
+   * works exactly once, on a brand-new database, and then never again. On the live
+   * database — which already held the previous five tiers — editing
+   * `MILESTONE_TIERS` changed NOTHING. The code would have said ₦2,000 per ten
+   * while the database went on paying the old amounts, and the only symptom would
+   * have been users reporting that their balance did not match the app.
+   *
+   * So the table is now synced on every boot: upsert by `key`, exactly like
+   * reference data. The code is the source of truth, and a deploy is all it takes
+   * to change a reward.
+   *
+   * ## What is deliberately NOT overwritten
+   *
+   * `claimedTotal` is live data, not configuration — it is how many times a tier
+   * has actually been claimed across all users. The upsert leaves it alone; a
+   * restart must never reset a counter that money depends on.
+   *
+   * Tiers that no longer exist in code are deactivated rather than deleted.
+   * Deletion would break the foreign key from `milestone_claims`, destroying the
+   * record of rewards already paid out — the one record that must survive.
    */
-  async seedIfEmpty() {
-    const [row] = await this.db
-      .select({ count: sql<string>`COUNT(*)` })
-      .from(schema.milestones);
+  async syncTiers() {
+    const keys = MILESTONE_TIERS.map((tier) => tier.key);
 
-    if (Number(row?.count ?? 0) > 0) return { seeded: false };
+    await this.db
+      .insert(schema.milestones)
+      .values(MILESTONE_TIERS)
+      .onConflictDoUpdate({
+        target: schema.milestones.key,
+        set: {
+          invitesRequired: sql`excluded.invites_required`,
+          rewardTitle: sql`excluded.reward_title`,
+          rewardDescription: sql`excluded.reward_description`,
+          rewardType: sql`excluded.reward_type`,
+          valueKobo: sql`excluded.value_kobo`,
+          badgeName: sql`excluded.badge_name`,
+          limitTotal: sql`excluded.limit_total`,
+          autoClaim: sql`excluded.auto_claim`,
+          sortOrder: sql`excluded.sort_order`,
+          active: true,
+          // claimedTotal deliberately absent — see above.
+        },
+      });
 
-    await this.db.insert(schema.milestones).values(MILESTONE_TIERS).onConflictDoNothing();
-    this.logger.log(`[milestones] seeded ${MILESTONE_TIERS.length} tiers`);
-    return { seeded: true, count: MILESTONE_TIERS.length };
+    const retired = await this.db
+      .update(schema.milestones)
+      .set({ active: false })
+      .where(notInArray(schema.milestones.key, keys))
+      .returning({ key: schema.milestones.key });
+
+    this.logger.log(
+      `[milestones] synced ${MILESTONE_TIERS.length} reward tiers` +
+        (retired.length > 0 ? `, retired ${retired.map((r) => r.key).join(', ')}` : ''),
+    );
+
+    return { synced: MILESTONE_TIERS.length, retired: retired.map((r) => r.key) };
   }
 
   /** All tiers, each with this user's claim state resolved. */
