@@ -74,11 +74,26 @@ export const MILESTONE_TIERS = Array.from(
     return {
       key: `invites_${invitesRequired}`,
       invitesRequired,
-      rewardTitle: `₦${(valueKobo / 100).toLocaleString('en-NG')} cash reward`,
+      // Names the block, not the running total.
+      //
+      // `valueKobo` below is what this ONE tier credits — ₦2,000 — and the ledger
+      // pays exactly that. Labelling it a "total" would misdescribe the payment,
+      // and labelling it nothing distinguishes it from the other nine identical
+      // rows, which is how the app ended up showing ₦2,000 ten times over as if
+      // that were the whole reward.
+      rewardTitle: `Block ${invitesRequired / REFERRALS_PER_BLOCK} of ₦${(
+        valueKobo / 100
+      ).toLocaleString('en-NG')}`,
       rewardDescription:
-        `₦${(valueKobo / 100).toLocaleString('en-NG')} credited to your balance for every 10 ` +
-        `verified referrals — that is ${invitesRequired / REFERRALS_PER_BLOCK} block` +
-        `${invitesRequired / REFERRALS_PER_BLOCK === 1 ? '' : 's'} completed, not the total.`,
+        `Block ${invitesRequired / REFERRALS_PER_BLOCK} of ${MAX_TIER_INVITES / REFERRALS_PER_BLOCK}. ` +
+        `Each completed block of ${REFERRALS_PER_BLOCK} verified referrals pays ₦${(
+          valueKobo / 100
+        ).toLocaleString('en-NG')}, so reaching ${invitesRequired} means ` +
+        `${invitesRequired / REFERRALS_PER_BLOCK} block${
+          invitesRequired / REFERRALS_PER_BLOCK === 1 ? ' has' : 's have'
+        } paid — ₦${(((invitesRequired / REFERRALS_PER_BLOCK) * valueKobo) / 100).toLocaleString(
+          'en-NG',
+        )} in total.`,
       rewardType: 'cash' as const,
       valueKobo,
       badgeName: null as string | null,
